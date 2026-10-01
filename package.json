@@ -1,0 +1,37 @@
+{
+  "name": "@xromdev/roll",
+  "version": "0.1.0",
+  "description": "Notes falling onto lanes: the canvas blocks, sparks and frame loop under @xromdev/pianoroll and @xromdev/drumroll — no framework, any lanes.",
+  "license": "MIT",
+  "author": "Oleksandr Maksymov",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm test"
+  },
+  "keywords": ["piano-roll", "falling-notes", "synthesia", "visualizer", "canvas", "music", "midi", "nes"],
+  "repository": { "type": "git", "url": "git+https://github.com/DeepNESReverse/xrom-roll.git" },
+  "homepage": "https://github.com/DeepNESReverse/xrom-roll#readme",
+  "bugs": { "url": "https://github.com/DeepNESReverse/xrom-roll/issues" },
+  "engines": { "node": ">=18" },
+  "devDependencies": {
+    "jsdom": "^25.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "publishConfig": { "access": "public" }
+}
