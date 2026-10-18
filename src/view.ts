@@ -16,7 +16,7 @@
  * time as the last frame) or scrolled out of view, it does nothing at all.
  */
 
-import { frameOf, paintRoll, type Guide, type LaneBackdrop, type LaneColumn, type LitLane, type PaintedNote, type PitchCurve } from './paint.js';
+import { frameOf, paintRoll, type Guide, type LaneBackdrop, type LaneColumn, type LaneRegion, type LitLane, type PaintedNote, type PitchCurve } from './paint.js';
 import { burst, stepSparks, type Spark } from './sparks.js';
 import { OTHER, resolveTracks, type TrackStyle } from './tracks.js';
 
@@ -49,6 +49,8 @@ export interface SurfaceLayout {
   nodes: ReadonlyMap<number, HTMLElement>;
   guides?: readonly Guide[];
   backdrops?: readonly LaneBackdrop[];
+  /** Stretches of lanes painted behind the blocks — see `LaneRegion`. */
+  regions?: readonly LaneRegion[];
   /** Pixels for one semitone, for drawing bends. */
   semitonePx?: number;
 }
@@ -303,6 +305,7 @@ export class RollView<Options extends RollOptions = RollOptions> {
       columns: layout.columns,
       guides: layout.guides,
       backdrops: layout.backdrops,
+      regions: layout.regions,
       notes,
       time,
       lookAhead,

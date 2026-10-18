@@ -65,8 +65,10 @@ roll.play(() => audioContext.currentTime - startedAt); // or roll.render(seconds
 
 A surface may also implement `strike(lane, node, note, repeat)` — a note just
 landed — and `sounding(lanes, lit)` — the set of sounding lanes changed — to
-animate its own pieces, and return `guides`, `backdrops` and `semitonePx` from
-`layout` for lines, lane columns and how far a bend of one semitone moves.
+animate its own pieces, and return `guides`, `backdrops`, `regions` and `semitonePx`
+from `layout` for lines, lane columns, stretches of lanes that mean something as a
+whole (a tint, a dashed edge and a label behind the blocks — the keys past a piano's
+ends, in `@xromdev/pianoroll`) and how far a bend of one semitone moves.
 
 ## Notes
 

@@ -74,6 +74,18 @@ export interface LaneBackdrop extends LaneColumn {
 }
 
 /**
+ * A stretch of lanes that means something as a whole — the keys past a piano's ends — painted
+ * behind the blocks: a tint deepening towards the hit line, a dashed line on its `edge`, and its
+ * `label` at the foot, across the stretch if it fits and up it if not.
+ */
+export interface LaneRegion extends LaneColumn {
+  /** `r, g, b` — the tint, the line and the label take their own alphas. */
+  rgb: string;
+  edge: 'left' | 'right';
+  label?: string;
+}
+
+/**
  * A lane that is sounding right now.
  *
  * It carries the note's own `start` because "the same lane is still lit" and
@@ -102,6 +114,8 @@ export interface PaintInput {
    * panel do, or the blocks look like they are falling through empty space.
    */
   backdrops?: readonly LaneBackdrop[];
+  /** Behind the blocks too, over the guides — see `LaneRegion`. */
+  regions?: readonly LaneRegion[];
   /** Only the notes in view; the caller windows them. */
   notes: readonly PaintedNote[];
   time: number;
@@ -353,6 +367,7 @@ export function paintRoll({
   columns,
   guides = [],
   backdrops = [],
+  regions = [],
   notes,
   time,
   lookAhead,
@@ -385,6 +400,8 @@ export function paintRoll({
     ctx.fillStyle = guide.strong ? 'rgba(255,255,255,0.085)' : 'rgba(255,255,255,0.03)';
     ctx.fillRect(guide.x, 0, 1, hitY);
   }
+
+  for (const region of regions) paintRegion(ctx, region, hitY);
 
   ctx.save();
   ctx.beginPath();
@@ -598,6 +615,43 @@ function paintSparks(ctx: CanvasRenderingContext2D, sparks: readonly Spark[], hi
     ctx.beginPath();
     ctx.arc(spark.x, y, radius * SPARK_CORE * spark.life, 0, Math.PI * 2);
     ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** One `LaneRegion`, behind everything that falls. */
+function paintRegion(ctx: CanvasRenderingContext2D, region: LaneRegion, hitY: number): void {
+  ctx.save();
+  const tint = ctx.createLinearGradient(0, 0, 0, hitY);
+  tint.addColorStop(0, `rgba(${region.rgb}, 0.05)`);
+  tint.addColorStop(1, `rgba(${region.rgb}, 0.16)`);
+  ctx.fillStyle = tint;
+  ctx.fillRect(region.x, 0, region.width, hitY);
+  const lineX = Math.round(region.edge === 'left' ? region.x : region.x + region.width) + 0.5;
+  ctx.strokeStyle = `rgba(${region.rgb}, 0.75)`;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(lineX, 0);
+  ctx.lineTo(lineX, hitY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (region.label) {
+    ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.fillStyle = `rgba(${region.rgb}, 0.85)`;
+    const text = region.label.toUpperCase();
+    if (ctx.measureText(text).width + 8 <= region.width) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(text, region.x + region.width / 2, hitY - 6);
+    } else {
+      // Up the stretch, from the hit line, beside the dashed line.
+      ctx.translate(region.edge === 'left' ? region.x + 4 : region.x + region.width - 4, hitY - 6);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = region.edge === 'left' ? 'top' : 'bottom';
+      ctx.fillText(text, 0, 0);
+    }
   }
   ctx.restore();
 }

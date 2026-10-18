@@ -18,6 +18,7 @@ export {
   type Guide,
   type LaneBackdrop,
   type LaneColumn,
+  type LaneRegion,
   type LitLane,
   type PaintInput,
   type PaintedNote,

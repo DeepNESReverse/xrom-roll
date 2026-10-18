@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { frameOf, trailPeak, trailPoints, type PaintedNote, type PitchCurve } from '../src/paint.js';
+import { frameOf, paintRoll, trailPeak, trailPoints, type PaintedNote, type PitchCurve } from '../src/paint.js';
 
 /**
  * The pitch trail's geometry.
@@ -142,5 +142,47 @@ describe('frameOf, with a muted voice', () => {
     const shared: PaintedNote = { ...muted, lane: 60 };
     const { lit } = frameOf([sounding, shared], 0.5, 4, 1);
     expect(lit.get(60)?.color).toBe('#fff');
+  });
+});
+
+describe('paintRoll, with a region', () => {
+  /** A context that writes down what it is asked to draw, in order. */
+  function recorder() {
+    const calls: string[] = [];
+    const ctx = new Proxy({} as Record<string | symbol, unknown>, {
+      get: (target, key) => {
+        if (key in target) return target[key];
+        if (key === 'createLinearGradient') return () => ({ addColorStop: () => {} });
+        if (key === 'measureText') return (text: string) => ({ width: text.length * 6 });
+        return (...args: unknown[]) => calls.push(`${String(key)} ${args.join(' ')}`);
+      },
+      set: (target, key, value) => {
+        target[key] = value;
+        return true;
+      },
+    });
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, calls };
+  }
+
+  it('is painted behind the blocks: tint, dashed edge and label first', () => {
+    const { ctx, calls } = recorder();
+    paintRoll({
+      ctx,
+      width: 400,
+      height: 200,
+      columns: new Map([[110, { x: 300, width: 10 }]]),
+      regions: [{ x: 290, width: 110, rgb: '245, 158, 11', edge: 'left', label: 'past the piano' }],
+      notes: [{ lane: 110, start: 0.5, duration: 0.5, color: '#fff', velocity: 1, hatch: false } as PaintedNote],
+      time: 0,
+      lookAhead: 2,
+      lit: new Map(),
+    });
+    const tint = calls.indexOf('fillRect 290 0 110 200');
+    const label = calls.findIndex((c) => c.startsWith('fillText PAST THE PIANO'));
+    const block = calls.findIndex((c, i) => i > label && (c.startsWith('fillRect') || c.startsWith('roundRect') || c.startsWith('fill')));
+    expect(tint).toBeGreaterThanOrEqual(0);
+    expect(calls).toContain('moveTo 290.5 0');
+    expect(label).toBeGreaterThan(tint);
+    expect(block).toBeGreaterThan(label);
   });
 });
