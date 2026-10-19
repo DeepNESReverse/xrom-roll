@@ -66,7 +66,22 @@ export interface PaintedNote {
    * — with nothing to look up.
    */
   bend?: PitchCurve;
+  /**
+   * A drum's own mark in place of the block — see `DrumHead`. Its foot still lands on the hit line
+   * at the moment of the hit; a hit longer than the mark trails a thin tail up its length.
+   */
+  head?: DrumHead;
 }
+
+/**
+ * What a drum hit is drawn as. A block is a pitched note's shape — a length you hold — and on the
+ * kit it made every piece the same pill in the same few greens, which a reader called monotonous
+ * (2026-10-18): four hi-hat lanes read as one colour falling four times. A hit is a STRIKE, so each
+ * piece falls as the thing struck, the same picture its icon under the lane draws: a cymbal edge-on
+ * (an open hat as two with air between them), a drumhead from above for the kick, the toms and the
+ * snare (the snare rimmed), a burst for a clap, a stick for a side stick.
+ */
+export type DrumHead = 'cymbal' | 'openCymbal' | 'kick' | 'tom' | 'snare' | 'clap' | 'stick';
 
 /** A lane's own column of the falling area, tinted so the lane reads as a lane. */
 export interface LaneBackdrop extends LaneColumn {
@@ -318,7 +333,8 @@ function paintTrail(
   centre: number,
   bottom: number,
   full: number,
-  unit: number
+  unit: number,
+  peak = trailPeak(curve)
 ) {
   if (curve.length < 2) return;
 
@@ -330,7 +346,7 @@ function paintTrail(
   // nothing, since a fifth of a key of lean has no shape to read. Drawn not at
   // all they would hide an effect that is genuinely there. So the line fades
   // with the gesture: a hairline for a drift, a bold stroke for a slide.
-  const strength = Math.min(1, trailPeak(curve));
+  const strength = Math.min(1, peak);
 
   ctx.beginPath();
   const points = trailPoints(curve, centre, bottom, full, unit);
@@ -351,6 +367,335 @@ function paintTrail(
   ctx.strokeStyle = `rgba(255,255,255,${0.3 + 0.62 * strength})`;
   ctx.lineWidth = width;
   ctx.stroke();
+}
+
+/**
+ * How far a note's pitch has to travel, in semitones, to be drawn as a ribbon instead of a block.
+ *
+ * Under it the bend is a drift — a fifth of a semitone at a note's end, 261 of Battletoads' 304
+ * curves — and the block with its hairline says it. Over it the note GOES somewhere, and other
+ * cartridges go a long way: a triangle bass swept down two octaves in a few frames is how half the
+ * NES makes a kick. Drawn as a block in its first lane with a white line leaving it, that was a
+ * thin pink stub and a wire across half the keyboard, the two reading as unrelated (2026-10-18).
+ */
+const RIBBON_FROM = 1;
+/**
+ * The curve's pitch at `position` (0..1 through the note), held from one point to the next as the
+ * driver writes it — the pitch actually sounding at that moment.
+ */
+export function bendAt(curve: PitchCurve, position: number): number {
+  let value = curve[0]?.[1] ?? 0;
+  for (const [at, semitones] of curve) {
+    if (at > position) break;
+    value = semitones;
+  }
+  return value;
+}
+
+/**
+ * Every whole semitone a curve has covered by `position` (0..1 through the note), from its lowest
+ * to its highest point so far — the keys the sound has swept across.
+ */
+export function passedOver(curve: PitchCurve, position: number): number[] {
+  let low = Math.round(curve[0]?.[1] ?? 0);
+  let high = low;
+  for (const [at, semitones] of curve) {
+    if (at > position) break;
+    low = Math.min(low, Math.round(semitones));
+    high = Math.max(high, Math.round(semitones));
+  }
+  return Array.from({ length: high - low + 1 }, (_, i) => low + i);
+}
+
+/**
+ * How often a vibrato's string swings, Hz — about a real vibrato's own rate, so it reads as the
+ * note shaking rather than as a flicker or a sway.
+ */
+const STRING_HZ = 6;
+
+/**
+ * Whether a curve is a VIBRATO: one that turns back on itself at least three times, counted with
+ * the score's hysteresis (a turn needs a swing back of a quarter semitone), so the flicker a curve
+ * opens with and a slide's overshoot are not taken for one. The same reading as `turnsOf` in the
+ * score's effects.
+ */
+export function isVibrato(curve: PitchCurve): boolean {
+  if (curve.length === 0) return false;
+  // Going nowhere yet: the first swing of a quarter semitone either way from the start sets the
+  // direction. Then the curve's farthest point that way is kept, and a swing back of a quarter
+  // from it is a turn. The anchor must not follow the curve before a direction is set — a vibrato
+  // that eases in by 0.23 a frame (Alien 3's title, pulse 1 at 0:21) never moved a quarter from
+  // wherever it had just been, and was taken for a straight note.
+  const start = curve[0][1];
+  let direction = 0;
+  let extreme = start;
+  let turns = 0;
+  for (const [, semitones] of curve) {
+    if (direction === 0) {
+      if (Math.abs(semitones - start) >= VIBRATO_SWING) {
+        direction = Math.sign(semitones - start);
+        extreme = semitones;
+      }
+    } else if ((semitones - extreme) * direction > 0) {
+      extreme = semitones;
+    } else if (Math.abs(semitones - extreme) >= VIBRATO_SWING) {
+      turns++;
+      direction = -direction;
+      extreme = semitones;
+    }
+  }
+  return turns >= 3;
+}
+const VIBRATO_SWING = 0.25;
+
+/**
+ * A vibrato's curve as the string is at `phase` seconds into the note: a standing wave — the
+ * curve's own shape, its displacement swinging through straight and over to the mirror and back.
+ * Only the picture moves; the curve is what the driver played.
+ */
+export function stringAt(curve: PitchCurve, phase: number): PitchCurve {
+  const swing = Math.cos(2 * Math.PI * STRING_HZ * phase);
+  return curve.map(([at, semitones]) => [at, semitones * swing] as const);
+}
+
+/**
+ * A note whose pitch travels, drawn as the note itself travelling: a ribbon the width of its
+ * block, in its colour, laid along its pitch curve — it starts in the lane it was struck in and
+ * slides where the sound goes, so a sweep is one falling shape. Lit the way a block is: a halo,
+ * the colour, a white core, a bright lip at the landing edge.
+ */
+function paintRibbon(
+  ctx: CanvasRenderingContext2D,
+  note: PaintedNote,
+  curve: PitchCurve,
+  centre: number,
+  bottom: number,
+  full: number,
+  unit: number,
+  width: number,
+  alpha: number,
+  fade: number
+) {
+  // The curve as the driver wrote it, held to the note's both ends — at its real size: a sweep of
+  // 29 semitones crosses 29 keys, because that is how far the sound goes.
+  const shape: [number, number][] = curve.map(([at, semitones]) => [at, semitones]);
+  if (shape.length === 0) return;
+  if (shape[0][0] > 0) shape.unshift([0, shape[0][1]]);
+  if (shape[shape.length - 1][0] < 1) shape.push([1, shape[shape.length - 1][1]]);
+  const points = trailPoints(shape, centre, bottom, full, unit);
+
+  /*
+   * The block, swept along the curve: at every moment the note covers its lane's width centred on
+   * the pitch it has then, so the shape is that band traced up through time — a hold is a block, a
+   * slow slide a leaning block of the same width, and a leap of 27 semitones in two frames (RoboCop
+   * 3's triangle) a sliver as thin as the two frames it took. Stroking the curve at full width drew
+   * that leap as a bar across the keyboard heavier than the note itself; stroking it thin lost the
+   * holds. The width across is constant, the height of each part is its time — the roll's one rule.
+   */
+  const half = width / 2;
+  const outline = () => {
+    ctx.beginPath();
+    points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x - half, y) : ctx.lineTo(x - half, y)));
+    for (let i = points.length - 1; i >= 0; i--) ctx.lineTo(points[i][0] + half, points[i][1]);
+    ctx.closePath();
+  };
+  ctx.save();
+  ctx.lineJoin = 'round';
+  {
+    // The halo: the outline itself, wide and faint, so the band sits in its own light as a block does.
+    for (const [spread, strength] of [
+      [GLOW_SPREAD, GLOW_ALPHA * 0.55],
+      [GLOW_SPREAD * 0.45, GLOW_ALPHA],
+    ] as const) {
+      ctx.globalAlpha = Math.min(1, alpha * strength);
+      ctx.strokeStyle = note.color;
+      ctx.lineWidth = spread * 2;
+      outline();
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = note.color;
+  outline();
+  ctx.fill();
+  // The white core along the middle — only where the band stands upright: along a leap it would
+  // be a white wire across the keys again, which is the look this replaces.
+  ctx.clip();
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = `rgba(255,255,255,${CORE_WHITE * 0.75})`;
+  ctx.lineWidth = Math.max(1, width * 0.32);
+  for (let i = 1; i < points.length; i++) {
+    const [x0, y0] = points[i - 1];
+    const [x1, y1] = points[i];
+    const dx = Math.abs(x1 - x0);
+    const dy = Math.abs(y1 - y0);
+    const upright = dx + dy > 0 ? dy / (dx + dy) : 0;
+    if (upright < 0.5) continue;
+    ctx.globalAlpha = alpha * upright;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.save();
+  // The lip on the landing edge, where the note is struck — as a block has.
+  ctx.globalAlpha = Math.min(1, 0.3 + 0.35 * note.velocity) * fade;
+  ctx.fillStyle = '#ffffff';
+  roundRect(ctx, points[0][0] - width / 2, bottom - 1.5, width, 1.5, 0.75);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** The widest a drum's mark is drawn, px: a kick in a 150px lane is a hit, not a moon. */
+const HEAD_MAX = 44;
+/** How far a quiet hit shrinks: a hit at velocity 0 is this share of a full one. */
+const HEAD_QUIET = 0.68;
+
+/**
+ * One drum hit as its own mark (`DrumHead`), its foot on the moment of the hit.
+ *
+ * Every shape is built about its own centre at a scale `k`, so the halo is the same path drawn
+ * larger and fainter — the blocks' two-fill glow, without a blur — and the light inside is one
+ * radial gradient: white at the heart of the strike, the piece's colour at its rim.
+ */
+function paintHead(
+  ctx: CanvasRenderingContext2D,
+  note: PaintedNote,
+  cx: number,
+  laneWidth: number,
+  bottom: number,
+  top: number,
+  alpha: number,
+  fade: number
+) {
+  const size = Math.min(laneWidth, HEAD_MAX) * (HEAD_QUIET + (1 - HEAD_QUIET) * note.velocity);
+  const half = size / 2;
+  // Each shape's height, so its foot can sit on `bottom` and its tail can start over it.
+  const tall: Record<DrumHead, number> = {
+    cymbal: Math.max(5, size * 0.24),
+    openCymbal: Math.max(14, size * 0.62),
+    kick: size,
+    tom: size * 0.78,
+    snare: size * 0.86,
+    clap: size * 0.8,
+    stick: size * 0.5,
+  };
+  const head = note.head!;
+  const height = tall[head];
+  const cy = bottom - height / 2;
+
+  // The hit's length, where it outlasts its mark: a thread up the lane, faint, so a long noise
+  // still says how long it rang without turning back into a block.
+  if (bottom - top > height + 2) {
+    ctx.globalAlpha = alpha * 0.32;
+    ctx.fillStyle = note.color;
+    roundRect(ctx, cx - 1.5, top, 3, bottom - height - top, 1.5);
+    ctx.fill();
+  }
+
+  const shape = (k: number) => {
+    ctx.beginPath();
+    const r = half * k;
+    switch (head) {
+      case 'cymbal': {
+        ctx.ellipse(cx, cy, r, (height / 2) * k, 0, 0, Math.PI * 2);
+        break;
+      }
+      case 'openCymbal': {
+        // Two plates, the top one tipped: the gap between them is what "open" means.
+        const plate = Math.max(2.4, size * 0.11) * k;
+        ctx.ellipse(cx, bottom - plate, r, plate, 0, 0, Math.PI * 2);
+        ctx.moveTo(cx + r, bottom - height + plate);
+        ctx.ellipse(cx, bottom - height + plate, r, plate, -0.12, 0, Math.PI * 2);
+        break;
+      }
+      case 'kick':
+      case 'tom':
+      case 'snare': {
+        ctx.arc(cx, cy, (height / 2) * k, 0, Math.PI * 2);
+        break;
+      }
+      case 'clap': {
+        // A four-pointed burst: the crack of two hands, not a body.
+        const R = (height / 2) * k;
+        const waist = R * 0.34;
+        for (let i = 0; i < 8; i++) {
+          const angle = (i * Math.PI) / 4 - Math.PI / 2;
+          const reach = i % 2 === 0 ? R : waist;
+          const px = cx + Math.cos(angle) * reach;
+          const py = cy + Math.sin(angle) * reach;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        break;
+      }
+      case 'stick': {
+        // A stick laid across the hoop, leaning.
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-0.5);
+        const len = r * 1.1;
+        const thick = Math.max(2.5, size * 0.09) * k;
+        if (typeof ctx.roundRect === 'function')
+          ctx.roundRect(-len, -thick, len * 2, thick * 2, thick);
+        else ctx.rect(-len, -thick, len * 2, thick * 2);
+        ctx.restore();
+        break;
+      }
+    }
+  };
+
+  ctx.fillStyle = note.color;
+  for (const [k, strength] of [
+    [1.5, GLOW_ALPHA * 0.55],
+    [1.22, GLOW_ALPHA],
+  ] as const) {
+    ctx.globalAlpha = Math.min(1, alpha * strength);
+    shape(k);
+    ctx.fill();
+  }
+  ctx.globalAlpha = alpha;
+  shape(1);
+  ctx.fill();
+
+  ctx.save();
+  ctx.clip();
+  const light = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(half, height / 2));
+  light.addColorStop(0, `rgba(255,255,255,${CORE_WHITE})`);
+  light.addColorStop(0.55, 'rgba(255,255,255,0.18)');
+  light.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = light;
+  ctx.fillRect(cx - half * 1.6, bottom - height - 4, half * 3.2, height + 8);
+  ctx.restore();
+
+  // A drumhead has a hoop; the snare's is the bright one — the rim the stick cracks against.
+  if (head === 'snare' || head === 'tom' || head === 'kick') {
+    ctx.globalAlpha = alpha * (head === 'snare' ? 0.95 : 0.5);
+    ctx.strokeStyle = head === 'snare' ? '#ffffff' : note.color;
+    ctx.lineWidth = head === 'snare' ? 1.6 : 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, height / 2 - 1, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // A cymbal's bell, the bump at its middle.
+  if (head === 'cymbal' || head === 'openCymbal') {
+    ctx.globalAlpha = alpha * 0.9;
+    ctx.fillStyle = '#ffffff';
+    const bellY = head === 'cymbal' ? cy : bottom - height + Math.max(2.4, size * 0.11);
+    ctx.beginPath();
+    ctx.ellipse(
+      cx,
+      bellY - 0.5,
+      Math.max(2, size * 0.09),
+      Math.max(1.2, size * 0.04),
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
 }
 
 /**
@@ -429,6 +774,34 @@ export function paintRoll({
     const fade = note.dimmed ? DIMMED : 1;
 
     const alpha = (0.4 + 0.6 * note.velocity) * fade;
+    if (note.head) {
+      paintHead(ctx, note, column.x + column.width / 2, w, bottom, top, alpha, fade);
+      continue;
+    }
+    // A vibrato shakes like a plucked string — once it is struck: falling, it is the shape the
+    // driver plays, still; from the moment it reaches its key it swings, and since the swing starts
+    // from that same shape, the strike is where the shaking begins. Shaking all the way down, every
+    // vibrato on screen was a wriggling worm long before it sounded. On the music's clock, so a
+    // paused string is still too.
+    const bend =
+      note.bend && time >= note.start && isVibrato(note.bend)
+        ? stringAt(note.bend, time - note.start)
+        : note.bend;
+    if (bend && note.bend && semitonePx && trailPeak(note.bend) >= RIBBON_FROM) {
+      paintRibbon(
+        ctx,
+        note,
+        bend,
+        column.x + column.width / 2,
+        bottom,
+        full,
+        semitonePx,
+        w,
+        alpha,
+        fade
+      );
+      continue;
+    }
     const radius = Math.min(w, h) * RADIUS_SHARE;
 
     // The halo first, widest and faintest, so the block is sitting in its own
@@ -496,9 +869,12 @@ export function paintRoll({
     );
     ctx.fill();
 
-    if (note.bend) {
+    if (bend) {
       ctx.globalAlpha = fade;
-      paintTrail(ctx, note.bend, column.x + column.width / 2, bottom, full, semitonePx ?? w);
+      // Weighted by the curve the driver played, not the string's swing — or the line would blink
+      // every time the string passed through straight.
+      const peak = trailPeak(note.bend ?? bend);
+      paintTrail(ctx, bend, column.x + column.width / 2, bottom, full, semitonePx ?? w, peak);
     }
   }
   ctx.globalAlpha = 1;
@@ -556,8 +932,18 @@ export function frameOf(
   time: number,
   lookAhead: number,
   maxDuration: number
-): { notes: PaintedNote[]; lit: Map<number, LitLane> } {
+): {
+  notes: PaintedNote[];
+  lit: Map<number, LitLane>;
+  glide: Map<number, string>;
+} {
   const notes = visibleNotes(sorted, time, lookAhead, maxDuration);
+  // The keys a sounding slide has passed over so far — a soft glow on each (`glide`), fading as a
+  // released key does. Lighting only the key under the pitch NOW showed nothing on the slides that
+  // matter most: Alien 3's triangle drums fall 7–28 semitones into their key in two or three
+  // frames, gone before a glow could be seen. Lit along the whole way it came, the fall leaves a
+  // streak on the keyboard; a slow glissando is followed key by key.
+  const glide = new Map<number, string>();
 
   // Two voices on one lane: the louder one owns the flash, so a doubled melody
   // does not flicker between two colours from one frame to the next.
@@ -567,11 +953,20 @@ export function frameOf(
     // A muted note is not sounding, so it lights nothing. On a lane shared with
     // an audible voice the audible one still lights it, which is the truth.
     if (note.dimmed) continue;
+    if (note.bend && trailPeak(note.bend) >= RIBBON_FROM && note.duration > 0) {
+      for (const offset of passedOver(note.bend, (time - note.start) / note.duration)) {
+        if (offset !== 0) glide.set(note.lane + offset, note.color);
+      }
+    }
     const current = lit.get(note.lane);
     if (current && current.velocity >= note.velocity) continue;
-    lit.set(note.lane, { color: note.color, start: note.start, velocity: note.velocity });
+    lit.set(note.lane, {
+      color: note.color,
+      start: note.start,
+      velocity: note.velocity,
+    });
   }
-  return { notes, lit };
+  return { notes, lit, glide };
 }
 
 /**

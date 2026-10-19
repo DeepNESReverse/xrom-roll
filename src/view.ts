@@ -16,7 +16,7 @@
  * time as the last frame) or scrolled out of view, it does nothing at all.
  */
 
-import { frameOf, paintRoll, type Guide, type LaneBackdrop, type LaneColumn, type LaneRegion, type LitLane, type PaintedNote, type PitchCurve } from './paint.js';
+import { frameOf, paintRoll, type DrumHead, type Guide, type LaneBackdrop, type LaneColumn, type LaneRegion, type LitLane, type PaintedNote, type PitchCurve } from './paint.js';
 import { burst, stepSparks, type Spark } from './sparks.js';
 import { OTHER, resolveTracks, type TrackStyle } from './tracks.js';
 
@@ -37,6 +37,8 @@ export interface RollNote {
   dimmed?: boolean;
   /** Vibrato, a bend or a slide: `[position 0..1, semitones]`, drawn along the block. */
   bend?: PitchCurve;
+  /** A drum hit's own mark in place of the block — see `DrumHead`. */
+  head?: DrumHead;
 }
 
 /** Where everything is, for one size of the view — what a surface hands back. */
@@ -176,6 +178,7 @@ export class RollView<Options extends RollOptions = RollOptions> {
         hatch: style?.hatch ?? false,
         dimmed: note.dimmed,
         bend: note.bend,
+        head: note.head,
       };
     });
     painted.sort((a, b) => a.start - b.start);
@@ -287,7 +290,7 @@ export class RollView<Options extends RollOptions = RollOptions> {
     this.dirty = false;
 
     const lookAhead = this.options.lookAhead ?? 2.5;
-    const { notes, lit } = frameOf(this.painted, time, lookAhead, this.maxDuration);
+    const { notes, lit, glide } = frameOf(this.painted, time, lookAhead, this.maxDuration);
 
     const sparks = this.options.sparks !== false;
     if (sparks) {
@@ -319,6 +322,15 @@ export class RollView<Options extends RollOptions = RollOptions> {
     let soundingChanged = false;
     for (const [lane, state] of this.lanes) {
       const note = lit.get(lane);
+      // A slide passing over this lane: a soft glow in its colour, no strike — see `frameOf`.
+      // `data-glide` stays '0' after, so the colour lasts through the fade.
+      const glow = note ? undefined : glide.get(lane);
+      if (glow) {
+        state.node.style.setProperty('--glide', glow);
+        if (state.node.dataset.glide !== '1') state.node.dataset.glide = '1';
+      } else if (state.node.dataset.glide === '1') {
+        state.node.dataset.glide = '0';
+      }
       if (!note) {
         if (state.lit) {
           state.node.dataset.lit = '0';

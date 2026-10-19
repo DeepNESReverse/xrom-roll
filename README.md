@@ -82,8 +82,18 @@ interface RollNote {
   velocity?: number;   // 0..1, default 1
   dimmed?: boolean;    // shown faded, lights nothing (a muted voice)
   bend?: [number, number][]; // [0..1 through the note, semitones]
+  head?: DrumHead;     // a drum hit's own mark instead of a block
 }
 ```
+
+A note whose pitch travels a semitone or more falls as a **ribbon**: the block swept along its
+curve at its real size — a hold is a block, a slide a leaning block, a leap a sliver as thin as
+the time it took. A **vibrato** (a curve that turns back three times or more) shakes like a
+plucked string once it reaches its lane, and is still while it falls. While a slide sounds, the
+lanes it sweeps across glow faintly in its colour (`data-glide` on the lane nodes, `--glide` the
+colour) and fade with the release. `head` (`'cymbal' | 'openCymbal' | 'kick' | 'tom' | 'snare' |
+'clap' | 'stick'`) draws a hit as the piece struck. Exported to reuse: `isVibrato`, `stringAt`,
+`bendAt`, `passedOver`.
 
 ## Options
 

@@ -10,11 +10,16 @@
 export { RollView, type RollNote, type RollOptions, type RollSurface, type SurfaceLayout } from './view.js';
 export { DEFAULT_TRACKS, OTHER, PALETTE_SLOTS, resolveTracks, type TrackStyle } from './tracks.js';
 export {
+  bendAt,
   frameOf,
+  isVibrato,
   paintRoll,
+  passedOver,
+  stringAt,
   trailPeak,
   trailPoints,
   visibleNotes,
+  type DrumHead,
   type Guide,
   type LaneBackdrop,
   type LaneColumn,

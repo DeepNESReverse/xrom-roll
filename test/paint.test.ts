@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { frameOf, paintRoll, trailPeak, trailPoints, type PaintedNote, type PitchCurve } from '../src/paint.js';
+import { bendAt, frameOf, isVibrato, paintRoll, passedOver, stringAt, trailPeak, trailPoints, type PaintedNote, type PitchCurve } from '../src/paint.js';
 
 /**
  * The pitch trail's geometry.
@@ -152,7 +152,7 @@ describe('paintRoll, with a region', () => {
     const ctx = new Proxy({} as Record<string | symbol, unknown>, {
       get: (target, key) => {
         if (key in target) return target[key];
-        if (key === 'createLinearGradient') return () => ({ addColorStop: () => {} });
+        if (key === 'createLinearGradient' || key === 'createRadialGradient') return () => ({ addColorStop: () => {} });
         if (key === 'measureText') return (text: string) => ({ width: text.length * 6 });
         return (...args: unknown[]) => calls.push(`${String(key)} ${args.join(' ')}`);
       },
@@ -184,5 +184,128 @@ describe('paintRoll, with a region', () => {
     expect(calls).toContain('moveTo 290.5 0');
     expect(label).toBeGreaterThan(tint);
     expect(block).toBeGreaterThan(label);
+  });
+});
+
+describe('isVibrato', () => {
+  it('takes a curve that turns back three times or more', () => {
+    expect(
+      isVibrato([
+        [0, 0],
+        [0.2, 0.5],
+        [0.4, -0.5],
+        [0.6, 0.5],
+        [0.8, -0.5],
+        [1, 0],
+      ])
+    ).toBe(true);
+  });
+
+  it('takes a vibrato that eases in by small steps — Alien 3, title, pulse 1 at 0:21', () => {
+    const steps = [
+      0, 0, 0, -0.23, -0.46, -0.46, -0.23, 0, 0, 0.23, 0.47, 0.47, 0.23, 0, 0, -0.23, -0.46, -0.46,
+      -0.23, 0, 0, 0.23, 0.47,
+    ];
+    expect(isVibrato(steps.map((semitones, i) => [i / steps.length, semitones] as const))).toBe(
+      true
+    );
+  });
+
+  it('does not take a slide, a drift, or the flicker a curve opens with', () => {
+    expect(
+      isVibrato([
+        [0, 29],
+        [0.15, 0],
+        [1, 0],
+      ])
+    ).toBe(false);
+    expect(
+      isVibrato([
+        [0, 0],
+        [1, 0.2],
+      ])
+    ).toBe(false);
+    expect(
+      isVibrato([
+        [0, 0],
+        [0.1, 0.05],
+        [0.2, -0.05],
+        [0.3, 0.05],
+        [0.4, -0.05],
+        [1, 0],
+      ])
+    ).toBe(false);
+  });
+});
+
+describe('stringAt', () => {
+  const curve = [
+    [0, 0],
+    [0.5, 1],
+    [1, -1],
+  ] as const;
+
+  it('is the curve itself at the start of the note, and straight a quarter swing later', () => {
+    expect(stringAt(curve, 0)).toEqual(curve.map(([at, s]) => [at, s]));
+    for (const [, semitones] of stringAt(curve, 1 / 24))
+      expect(Math.abs(semitones)).toBeLessThan(1e-9);
+  });
+
+  it('swings over to the mirror half a swing later, and keeps the positions', () => {
+    const mirrored = stringAt(curve, 1 / 12);
+    expect(mirrored.map(([at]) => at)).toEqual([0, 0.5, 1]);
+    expect(mirrored[1][1]).toBeCloseTo(-1);
+    expect(mirrored[2][1]).toBeCloseTo(1);
+  });
+});
+
+describe('bendAt', () => {
+  it('holds each point until the next, as the driver writes it', () => {
+    const curve = [
+      [0, 29],
+      [0.1, 25],
+      [0.16, 0],
+    ] as const;
+    expect(bendAt(curve, 0)).toBe(29);
+    expect(bendAt(curve, 0.12)).toBe(25);
+    expect(bendAt(curve, 0.5)).toBe(0);
+  });
+});
+
+describe('frameOf, a slide', () => {
+  it('glows the key under the pitch the slide has reached, and still lights the struck one', () => {
+    const note = {
+      lane: 60,
+      start: 0,
+      duration: 1,
+      velocity: 1,
+      color: '#f0f',
+      hatch: false,
+      bend: [
+        [0, 0],
+        [0.5, -5],
+      ] as const,
+    };
+    const early = frameOf([note], 0.2, 1, 1);
+    expect(early.lit.has(60)).toBe(true);
+    expect(early.glide.size).toBe(0);
+    const late = frameOf([note], 0.7, 1, 1);
+    expect(late.lit.has(60)).toBe(true);
+    // Every key on the way down, not only the one it has reached.
+    expect([...late.glide.keys()].sort((a, b) => a - b)).toEqual([55, 56, 57, 58, 59]);
+  });
+});
+
+describe('passedOver', () => {
+  it('is every semitone a fall has swept so far — a triangle drum from 7 up into its key', () => {
+    const fall = [
+      [0, 7],
+      [0.25, 5],
+      [0.5, 2],
+      [0.75, 0],
+    ] as const;
+    expect(passedOver(fall, 0)).toEqual([7]);
+    expect(passedOver(fall, 0.3)).toEqual([5, 6, 7]);
+    expect(passedOver(fall, 1)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
   });
 });

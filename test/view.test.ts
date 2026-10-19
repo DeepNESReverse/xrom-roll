@@ -7,7 +7,7 @@ beforeAll(() => {
   const noop = () => {};
   const gradient = { addColorStop: noop };
   const ctx: Record<string | symbol, unknown> = new Proxy({}, {
-    get: (t: Record<string | symbol, unknown>, k) => (k in t ? t[k] : k === 'clearRect' ? () => clears++ : k === 'createLinearGradient' || k === 'createPattern' ? () => gradient : noop),
+    get: (t: Record<string | symbol, unknown>, k) => (k in t ? t[k] : k === 'clearRect' ? () => clears++ : k === 'createLinearGradient' || k === 'createRadialGradient' || k === 'createPattern' ? () => gradient : noop),
     set: (t, k, v) => ((t[k] = v), true),
   });
   HTMLCanvasElement.prototype.getContext = (() => ctx) as unknown as typeof HTMLCanvasElement.prototype.getContext;
