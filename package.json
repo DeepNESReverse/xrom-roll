@@ -1,6 +1,6 @@
 {
   "name": "@xromdev/roll",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Notes falling onto lanes: the canvas blocks, sparks and frame loop under @xromdev/pianoroll and @xromdev/drumroll — no framework, any lanes.",
   "license": "MIT",
   "author": "Oleksandr Maksymov",
