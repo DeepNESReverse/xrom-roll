@@ -450,11 +450,13 @@ const VIBRATO_SWING = 0.25;
 
 /**
  * A vibrato's curve as the string is at `phase` seconds into the note: a standing wave — the
- * curve's own shape, its displacement swinging through straight and over to the mirror and back.
- * Only the picture moves; the curve is what the driver played.
+ * curve's own shape, its displacement easing down to straight and back out. Only the picture
+ * moves; the curve is what the driver played. It never swings over to the mirror: an NES vibrato
+ * is often one-sided (Power Blade 2's go 0 to +0.4), and a mirrored string showed the pitch going
+ * where the sound never goes — to the left of a key that, rightly, did not light.
  */
 export function stringAt(curve: PitchCurve, phase: number): PitchCurve {
-  const swing = Math.cos(2 * Math.PI * STRING_HZ * phase);
+  const swing = (1 + Math.cos(2 * Math.PI * STRING_HZ * phase)) / 2;
   return curve.map(([at, semitones]) => [at, semitones * swing] as const);
 }
 

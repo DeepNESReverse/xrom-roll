@@ -245,17 +245,21 @@ describe('stringAt', () => {
     [1, -1],
   ] as const;
 
-  it('is the curve itself at the start of the note, and straight a quarter swing later', () => {
+  it('is the curve itself at the start of the note, and straight half a swing later', () => {
     expect(stringAt(curve, 0)).toEqual(curve.map(([at, s]) => [at, s]));
-    for (const [, semitones] of stringAt(curve, 1 / 24))
-      expect(Math.abs(semitones)).toBeLessThan(1e-9);
+    const straight = stringAt(curve, 1 / 12);
+    expect(straight.map(([at]) => at)).toEqual([0, 0.5, 1]);
+    for (const [, semitones] of straight) expect(Math.abs(semitones)).toBeLessThan(1e-9);
   });
 
-  it('swings over to the mirror half a swing later, and keeps the positions', () => {
-    const mirrored = stringAt(curve, 1 / 12);
-    expect(mirrored.map(([at]) => at)).toEqual([0, 0.5, 1]);
-    expect(mirrored[1][1]).toBeCloseTo(-1);
-    expect(mirrored[2][1]).toBeCloseTo(1);
+  it('never swings over to the mirror — the keys it passes are the keys that light', () => {
+    for (let phase = 0; phase < 1 / 6; phase += 1 / 240) {
+      const [, up, down] = stringAt(curve, phase);
+      expect(up[1]).toBeGreaterThanOrEqual(0);
+      expect(up[1]).toBeLessThanOrEqual(1);
+      expect(down[1]).toBeLessThanOrEqual(0);
+      expect(down[1]).toBeGreaterThanOrEqual(-1);
+    }
   });
 });
 
