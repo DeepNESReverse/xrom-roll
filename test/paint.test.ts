@@ -211,6 +211,20 @@ describe('isVibrato', () => {
     );
   });
 
+  it('takes a vibrato of ±0.2 about the note — shi-kin-jou, Mahjong Tiles, bar 15', () => {
+    const steps = [0, 0.2, 0, -0.2, 0, 0.2, 0, -0.2, 0, 0.2, 0, -0.2, 0];
+    expect(isVibrato(steps.map((semitones, i) => [i / steps.length, semitones] as const))).toBe(
+      true
+    );
+  });
+
+  it('takes a vibrato however small, so long as it lasts', () => {
+    const steps = [0, 0.05, 0, -0.05, 0, 0.05, 0, -0.05, 0, 0.05, 0, -0.05, 0];
+    expect(isVibrato(steps.map((semitones, i) => [i / steps.length, semitones] as const))).toBe(
+      true
+    );
+  });
+
   it('does not take a slide, a drift, or the flicker a curve opens with', () => {
     expect(
       isVibrato([

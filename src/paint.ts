@@ -414,39 +414,53 @@ export function passedOver(curve: PitchCurve, position: number): number[] {
 const STRING_HZ = 6;
 
 /**
- * Whether a curve is a VIBRATO: one that turns back on itself at least three times, counted with
- * the score's hysteresis (a turn needs a swing back of a quarter semitone), so the flicker a curve
- * opens with and a slide's overshoot are not taken for one. The same reading as `turnsOf` in the
- * score's effects.
+ * Whether a curve is a VIBRATO: one that turns back on itself at least three times and is still
+ * turning in the second half of the note. However small the swing — a vibrato of ±0.05 is drawn as
+ * one too, its block shaking by as little as its pitch does (2026-10-31). What tells the flicker a
+ * curve opens with from a vibrato is not its size but that it dies out early; a slide's overshoot
+ * turns once or twice and settles.
  */
 export function isVibrato(curve: PitchCurve): boolean {
   if (curve.length === 0) return false;
-  // Going nowhere yet: the first swing of a quarter semitone either way from the start sets the
-  // direction. Then the curve's farthest point that way is kept, and a swing back of a quarter
-  // from it is a turn. The anchor must not follow the curve before a direction is set — a vibrato
-  // that eases in by 0.23 a frame (Alien 3's title, pulse 1 at 0:21) never moved a quarter from
-  // wherever it had just been, and was taken for a straight note.
-  const start = curve[0][1];
+  // Going nowhere yet: once the curve has spread either side of its start, the way it last went
+  // sets the direction. Then the curve's farthest point that way is kept, and any swing back from
+  // it is a turn. The anchor must not follow the curve before a direction is set — a vibrato that
+  // eases in by small steps (Alien 3's title, pulse 1 at 0:21) never moved far from wherever it
+  // had just been. And the spread is on both sides of the start, not away from it: a vibrato of
+  // ±0.2 about the note (shi-kin-jou's Mahjong Tiles, pulse 1 and 2 in bar 15) never goes far
+  // from the start, only from itself.
+  let low = curve[0][1];
+  let high = low;
   let direction = 0;
-  let extreme = start;
+  let extreme = low;
   let turns = 0;
-  for (const [, semitones] of curve) {
+  let late = 0;
+  for (const [at, semitones] of curve) {
     if (direction === 0) {
-      if (Math.abs(semitones - start) >= VIBRATO_SWING) {
-        direction = Math.sign(semitones - start);
+      low = Math.min(low, semitones);
+      high = Math.max(high, semitones);
+      if (high - low >= VIBRATO_SWING) {
+        direction = semitones === high ? 1 : -1;
         extreme = semitones;
       }
     } else if ((semitones - extreme) * direction > 0) {
       extreme = semitones;
     } else if (Math.abs(semitones - extreme) >= VIBRATO_SWING) {
       turns++;
+      if (at >= VIBRATO_LASTS) late++;
       direction = -direction;
       extreme = semitones;
     }
   }
-  return turns >= 3;
+  return turns >= 3 && late >= 2;
 }
-const VIBRATO_SWING = 0.25;
+/** A swing, semitones, big enough to be the pitch moving and not the arithmetic rounding. */
+const VIBRATO_SWING = 0.01;
+/**
+ * How far into the note (0..1) a vibrato is still turning, twice at least; a flicker has stopped by
+ * then, and its one return to the note at the end is not a second turn.
+ */
+const VIBRATO_LASTS = 0.5;
 
 /**
  * A vibrato's curve as the string is at `phase` seconds into the note: a standing wave — the
@@ -785,11 +799,14 @@ export function paintRoll({
     // from that same shape, the strike is where the shaking begins. Shaking all the way down, every
     // vibrato on screen was a wriggling worm long before it sounded. On the music's clock, so a
     // paused string is still too.
+    const vibrato = !!note.bend && isVibrato(note.bend);
     const bend =
-      note.bend && time >= note.start && isVibrato(note.bend)
+      note.bend && time >= note.start && vibrato
         ? stringAt(note.bend, time - note.start)
         : note.bend;
-    if (bend && note.bend && semitonePx && trailPeak(note.bend) >= RIBBON_FROM) {
+    // A vibrato is the block itself shaking, however narrow: a line drawn down the block ran
+    // along its white core and vanished there (shi-kin-jou's triangle, 2026-10-31).
+    if (bend && note.bend && semitonePx && (vibrato || trailPeak(note.bend) >= RIBBON_FROM)) {
       paintRibbon(
         ctx,
         note,
