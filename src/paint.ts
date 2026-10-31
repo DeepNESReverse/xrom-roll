@@ -427,8 +427,12 @@ export function isVibrato(curve: PitchCurve): boolean {
   // it is a turn. The anchor must not follow the curve before a direction is set — a vibrato that
   // eases in by small steps (Alien 3's title, pulse 1 at 0:21) never moved far from wherever it
   // had just been. And the spread is on both sides of the start, not away from it: a vibrato of
-  // ±0.2 about the note (shi-kin-jou's Mahjong Tiles, pulse 1 and 2 in bar 15) never goes far
+  // ±0.2 about the note (shi-kin-jou's Kyonshi, pulse 1 and 2 in bar 15) never goes far
   // from the start, only from itself.
+  // A turn is a swing back of a share of the curve's whole span: the steps a slide is written in
+  // wobble by a few hundredths, and against the five semitones Ragnarok's Canyon glides down they
+  // are no vibrato (2026-11-01) — against a vibrato's own span they are its swing.
+  const swing = Math.max(VIBRATO_SWING, trailSpan(curve) * VIBRATO_SHARE);
   let low = curve[0][1];
   let high = low;
   let direction = 0;
@@ -439,13 +443,13 @@ export function isVibrato(curve: PitchCurve): boolean {
     if (direction === 0) {
       low = Math.min(low, semitones);
       high = Math.max(high, semitones);
-      if (high - low >= VIBRATO_SWING) {
+      if (high - low >= swing) {
         direction = semitones === high ? 1 : -1;
         extreme = semitones;
       }
     } else if ((semitones - extreme) * direction > 0) {
       extreme = semitones;
-    } else if (Math.abs(semitones - extreme) >= VIBRATO_SWING) {
+    } else if (Math.abs(semitones - extreme) >= swing) {
       turns++;
       if (at >= VIBRATO_LASTS) late++;
       direction = -direction;
@@ -456,6 +460,25 @@ export function isVibrato(curve: PitchCurve): boolean {
 }
 /** A swing, semitones, big enough to be the pitch moving and not the arithmetic rounding. */
 const VIBRATO_SWING = 0.01;
+/**
+ * A turn's least swing as a share of the curve's span. Tried on every curve of the workshop's
+ * collections: 5% keeps a vibrato that ends in a fall of fifteen semitones (Castlevania III), 10%
+ * already lost them; a slide's steps are a hundredth of its span.
+ */
+const VIBRATO_SHARE = 0.05;
+/** How far a curve's pitch spreads, top to bottom, in semitones. */
+const trailSpan = (curve: PitchCurve): number =>
+  curve.length
+    ? Math.max(...curve.map(([, semitones]) => semitones)) -
+      Math.min(...curve.map(([, semitones]) => semitones))
+    : 0;
+/**
+ * The widest vibrato that shakes, semitones. The string swings the whole curve between straight
+ * and its shape; a vibrato inside its key does that as a tremble, but Turbo Tunnel Race's
+ * +4.7 / −2.8 thrashed its whole block across seven keys six times a second (2026-11-01). Wider
+ * than this the curve is drawn still — its shape is already the picture of it.
+ */
+const SHAKES_UNDER = 1;
 /**
  * How far into the note (0..1) a vibrato is still turning, twice at least; a flicker has stopped by
  * then, and its one return to the note at the end is not a second turn.
@@ -800,8 +823,9 @@ export function paintRoll({
     // vibrato on screen was a wriggling worm long before it sounded. On the music's clock, so a
     // paused string is still too.
     const vibrato = !!note.bend && isVibrato(note.bend);
+    const shakes = vibrato && trailPeak(note.bend!) < SHAKES_UNDER;
     const bend =
-      note.bend && time >= note.start && vibrato
+      note.bend && time >= note.start && shakes
         ? stringAt(note.bend, time - note.start)
         : note.bend;
     // A vibrato is the block itself shaking, however narrow: a line drawn down the block ran

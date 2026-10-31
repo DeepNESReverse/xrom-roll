@@ -225,6 +225,39 @@ describe('isVibrato', () => {
     );
   });
 
+  it("does not take the steps a slide is written in — Ragnarok's Canyon, gliss. −5.3", () => {
+    const glide = [
+      [0, 0],
+      [0.0556, 0],
+      [0.1111, 0.051],
+      [0.1667, 0],
+      [0.2222, 0.051],
+      [0.2778, -0.554],
+      [0.3333, -1.044],
+      [0.3889, -1.613],
+      [0.4444, -2.073],
+      [0.5, -2.61],
+      [0.5556, -3.045],
+      [0.6111, -3.553],
+      [0.6667, -3.965],
+      [0.7222, -4.447],
+      [0.7778, -4.839],
+      [0.8333, -5.298],
+      [0.8889, -5.26],
+      [0.9444, -5.298],
+      [1, -5.26],
+    ] as const;
+    expect(isVibrato(glide)).toBe(false);
+  });
+
+  it('takes a vibrato that ends in a fall — Castlevania III', () => {
+    const wave = [0, -0.15, -0.3, -0.15, 0, 0.15, 0.3, 0.46, 0.62, 0.46, 0.3, 0.15];
+    const steps = [0, 0, ...wave, ...wave, ...wave, ...wave, ...wave, -1, -4, -8, -12, -15];
+    expect(isVibrato(steps.map((semitones, i) => [i / steps.length, semitones] as const))).toBe(
+      true
+    );
+  });
+
   it('does not take a slide, a drift, or the flicker a curve opens with', () => {
     expect(
       isVibrato([
